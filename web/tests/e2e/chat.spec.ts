@@ -12,6 +12,8 @@ const portfolio = {
 };
 
 const sseBody = [
+  'event: thought\ndata: {"text":"The user asks about NVDA. "}\n\n',
+  'event: thought\ndata: {"text":"Check holdings first."}\n\n',
   'event: delta\ndata: {"text":"Let me check the latest numbers."}\n\n',
   'event: demote\ndata: {}\n\n',
   'event: status\ndata: {"id":"t1","text":"Reading the portfolio"}\n\n',
@@ -45,7 +47,9 @@ test('ask a question, get a cited answer', async ({ page }) => {
   await page.getByRole('button', { name: 'Send' }).click();
 
   await expect(page.getByText('NVDA looks stretched')).toBeVisible();
-  await expect(page.locator('.bubble-thoughts')).toHaveText('Let me check the latest numbers.');
+  await expect(page.locator('.bubble-thoughts')).toHaveText(
+    'The user asks about NVDA. Check holdings first.\nLet me check the latest numbers.',
+  );
   await expect(page.locator('.tool-line')).toContainText('Reading the portfolio');
   await expect(page.locator('.tool-line')).toHaveClass(/tool-done/); // check mark after the hold
   await expect(page.locator('sup.cite')).toHaveText('1');

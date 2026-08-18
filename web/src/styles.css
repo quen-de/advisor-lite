@@ -568,6 +568,15 @@ sup.cite {
   color: var(--text-dim);
 }
 
+/* column-reverse keeps a streaming thought scrolled to its latest line
+   without any scroll bookkeeping. */
+.bubble-scroll {
+  max-height: 132px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
 .bubble-thoughts {
   margin: 0;
   white-space: pre-wrap;
@@ -579,7 +588,7 @@ sup.cite {
   padding: 0;
 }
 
-.bubble-thoughts + .bubble-tools {
+.bubble-scroll + .bubble-tools {
   margin-top: var(--space-1);
 }
 

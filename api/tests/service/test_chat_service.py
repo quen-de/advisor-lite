@@ -7,6 +7,8 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPart,
     TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
     UserPromptPart,
 )
@@ -112,6 +114,23 @@ async def test_text_followed_by_tool_calls_is_demoted():
 
     events = [e async for e in ChatService._answer_deltas(final_round())]
     assert events == [{'type': 'delta', 'text': 'Answer.'}]
+
+
+async def test_thinking_streams_as_thought_events():
+    """A reasoning model's thinking parts stream as thought events - they
+    are commentary by construction, so no demote is involved - and they do
+    not count as answer text a tool call would need to demote."""
+
+    async def reasoning_round():
+        yield PartStartEvent(index=0, part=ThinkingPart(content='The user wants '))
+        yield PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta='a comparison.'))
+        yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
+
+    events = [e async for e in ChatService._answer_deltas(reasoning_round())]
+    assert events == [
+        {'type': 'thought', 'text': 'The user wants '},
+        {'type': 'thought', 'text': 'a comparison.'},
+    ]
 
 
 async def test_portfolio_edits_reach_the_next_message(pool):

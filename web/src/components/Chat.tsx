@@ -108,14 +108,34 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
           const { text } = data as { text: string };
           lastDeltaAt.current = Date.now();
           patchLast((message) => ({ ...message, text: message.text + text }));
+        } else if (event === 'thought') {
+          // Reasoning stream. A bubble stays open until tool calls land in
+          // it, so a thought after a tool round starts the next bubble.
+          const { text } = data as { text: string };
+          lastDeltaAt.current = Date.now();
+          patchLast((message) => {
+            const last = message.bubbles[message.bubbles.length - 1];
+            const bubbles =
+              last && last.tools.length === 0
+                ? [...message.bubbles.slice(0, -1), { ...last, thoughts: last.thoughts + text }]
+                : [...message.bubbles, { thoughts: text, tools: [] }];
+            return { ...message, bubbles };
+          });
         } else if (event === 'demote') {
           // The text streamed so far was commentary before a tool round:
-          // close it into a fresh bubble and let the answer restart clean.
-          patchLast((message) => ({
-            ...message,
-            text: '',
-            bubbles: [...message.bubbles, { thoughts: message.text.trim(), tools: [] }],
-          }));
+          // fold it into the round's open bubble, or a fresh one.
+          patchLast((message) => {
+            const thoughts = message.text.trim();
+            const last = message.bubbles[message.bubbles.length - 1];
+            const bubbles =
+              last && last.tools.length === 0
+                ? [
+                    ...message.bubbles.slice(0, -1),
+                    { ...last, thoughts: [last.thoughts.trim(), thoughts].filter(Boolean).join('\n') },
+                  ]
+                : [...message.bubbles, { thoughts, tools: [] }];
+            return { ...message, text: '', bubbles };
+          });
         } else if (event === 'status') {
           const { id, text } = data as { id: string; text: string };
           toolShownAt.current.set(id, Date.now());

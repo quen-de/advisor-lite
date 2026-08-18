@@ -13,6 +13,8 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPart,
     TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
     ToolCallPart,
 )
 
@@ -145,12 +147,14 @@ class ChatService:
     async def _answer_deltas(request_stream) -> AsyncIterator[dict]:
         """Forward streamed text as delta events, reclassifying on tool calls.
 
-        Whether a round's text is commentary or the final answer is unknowable
-        while it streams: it is commentary exactly when tool calls follow it
-        in the same response. So text streams as deltas optimistically, and
-        the moment a tool call part appears after text, a demote event tells
-        the client to move what it has accumulated into a thinking bubble.
-        The final round ends without tool calls, so its text is never demoted.
+        Reasoning models narrate in thinking parts, which are known to be
+        commentary the moment they stream, so they go out as thought events.
+        Plain text is ambiguous: it is commentary exactly when tool calls
+        follow it in the same response, which is unknowable while it streams.
+        So text streams as deltas optimistically, and the moment a tool call
+        part appears after text, a demote event tells the client to move what
+        it has accumulated into a thinking bubble. The final round ends
+        without tool calls, so its text is never demoted.
         """
         emitted = False
         async for event in request_stream:
@@ -159,16 +163,18 @@ class ChatService:
                     if event.part.content:
                         emitted = True
                         yield {'type': 'delta', 'text': event.part.content}
+                elif isinstance(event.part, ThinkingPart):
+                    if event.part.content:
+                        yield {'type': 'thought', 'text': event.part.content}
                 elif isinstance(event.part, ToolCallPart) and emitted:
                     emitted = False
                     yield {'type': 'demote'}
-            elif (
-                isinstance(event, PartDeltaEvent)
-                and isinstance(event.delta, TextPartDelta)
-                and event.delta.content_delta
-            ):
-                emitted = True
-                yield {'type': 'delta', 'text': event.delta.content_delta}
+            elif isinstance(event, PartDeltaEvent):
+                if isinstance(event.delta, TextPartDelta) and event.delta.content_delta:
+                    emitted = True
+                    yield {'type': 'delta', 'text': event.delta.content_delta}
+                elif isinstance(event.delta, ThinkingPartDelta) and event.delta.content_delta:
+                    yield {'type': 'thought', 'text': event.delta.content_delta}
 
     async def _title_chat(self, chat_id: str, user_text: str) -> str | None:
         """Give a fresh chat a short title from its opening message. Best-effort."""

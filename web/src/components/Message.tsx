@@ -71,7 +71,11 @@ export function Message({ role, text, sources, bubbles = [], streaming }: Messag
     <div className={`message message-${role}`}>
       {bubbles.map((bubble, index) => (
         <div className="thinking-bubble" key={index}>
-          {bubble.thoughts && <p className="bubble-thoughts">{bubble.thoughts}</p>}
+          {bubble.thoughts && (
+            <div className="bubble-scroll">
+              <p className="bubble-thoughts">{bubble.thoughts}</p>
+            </div>
+          )}
           {bubble.tools.length > 0 && (
             <ul className="bubble-tools">
               {bubble.tools.map((tool, toolIndex) => (
