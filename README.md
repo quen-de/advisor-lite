@@ -4,10 +4,11 @@ A demo portfolio-counseling agent. Built small on purpose to show how I build, d
 
 You chat with an investment counselor about a seeded demo portfolio, editable in place from the web view. The agent reads the current holdings, searches the web when a question needs current information, and answers with inline citations you can follow to the source. Conversations are persistent and multiturn.
 
-![demo](docs/demo.gif)
+https://github.com/user-attachments/assets/9d8a0041-70a0-446c-aea2-5775d3b4e033
 
-[▶ Full demo video (1:02)](docs/demo.mp4)
-<!-- re-record: bin/record-demo.sh against a running stack with real keys; banner mp4: trim the webm with ffmpeg -t -->
+<!-- Banner video: 62s h264 cut of the last recording (also at docs/demo.mp4). To refresh:
+     bin/record-demo.sh against a running stack with real keys, trim the webm with ffmpeg -t,
+     upload through any GitHub editor, and put the user-attachments URL above. -->
 
 
 ## Quickstart (60 seconds)
