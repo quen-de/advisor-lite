@@ -30,17 +30,39 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
   const [idle, setIdle] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastDeltaAt = useRef(0);
+  const statusShownAt = useRef(new Map<string, number>());
+  const thinkingShownAt = useRef(0);
+
+  // Every info line stays visible at least this long; tools often finish in
+  // well under a second and a line that flashes is worse than none.
+  const MIN_STATUS_MS = 2000;
+
+  const dropStatusAfterMinDisplay = (id: string) => {
+    const shownAt = statusShownAt.current.get(id);
+    if (shownAt === undefined) return; // drop already scheduled
+    statusShownAt.current.delete(id);
+    const drop = () => setStatuses((current) => current.filter((s) => s.id !== id));
+    const wait = shownAt + MIN_STATUS_MS - Date.now();
+    if (wait > 0) setTimeout(drop, wait);
+    else drop();
+  };
 
   // With a reasoning model the stream goes quiet between tool rounds while
-  // it thinks; surface that instead of an empty gap.
+  // it thinks; surface that instead of an empty gap. Once shown, the line
+  // also holds for the minimum display time.
   useEffect(() => {
     if (!streaming) {
       setIdle(false);
       return;
     }
     const timer = setInterval(() => {
-      setIdle(Date.now() - lastDeltaAt.current > 1500);
-    }, 400);
+      setIdle((shown) => {
+        const quiet = Date.now() - lastDeltaAt.current > 1500;
+        if (!shown && quiet) thinkingShownAt.current = Date.now();
+        if (shown && !quiet && Date.now() - thinkingShownAt.current < MIN_STATUS_MS) return true;
+        return quiet;
+      });
+    }, 200);
     return () => clearInterval(timer);
   }, [streaming]);
 
@@ -70,14 +92,15 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
         if (event === 'delta') {
           const { text } = data as { text: string };
           lastDeltaAt.current = Date.now();
-          setStatuses([]);
+          for (const id of statusShownAt.current.keys()) dropStatusAfterMinDisplay(id);
           patchLast((message) => ({ ...message, text: message.text + text }));
         } else if (event === 'status') {
           const { id, text } = data as { id: string; text: string };
+          statusShownAt.current.set(id, Date.now());
           setStatuses((current) => [...current.filter((s) => s.id !== id), { id, text }]);
         } else if (event === 'status_done') {
           const { id } = data as { id: string };
-          setStatuses((current) => current.filter((s) => s.id !== id));
+          dropStatusAfterMinDisplay(id);
         } else if (event === 'title') {
           const { title } = data as { title: string };
           onTitle?.(chatId, title);
@@ -100,6 +123,7 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
     } finally {
       setStreaming(false);
       setStatuses([]);
+      statusShownAt.current.clear();
     }
   }
 
