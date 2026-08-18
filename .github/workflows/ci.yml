@@ -17,8 +17,8 @@ jobs:
           --health-timeout 3s --health-retries 10
     defaults: {run: {working-directory: api}}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync --frozen
       - run: uv run ruff check && uv run ruff format --check
       - run: uv run ty check
@@ -30,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: web}}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: {node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json}
       - run: npm ci
       - run: npm run lint
@@ -43,7 +43,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker compose up --build -d
         env: {MODEL: test}
       - run: ./bin/smoke.sh
@@ -59,8 +59,8 @@ jobs:
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: api}}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
       - run: uv sync --frozen
       - name: Run evals when the provider key exists
         env:
