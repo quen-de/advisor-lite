@@ -23,14 +23,13 @@ Open http://localhost:8080. No keys handy? `MODEL=test` runs a fake model, the s
 
 ## What this demonstrates
 
-- **Agent-as-config**: the agent is a YAML spec ([`advisor.yaml`](api/src/advisor/agents/advisor.yaml)) loaded with pydantic-ai's `Agent.from_file`.
-- **Native capabilities**: web research is pydantic-ai-harness's `ExaSearch`; portfolio and citations are `AbstractCapability` subclasses bundling instructions, tools, and hooks.
+- **Agent-as-config**: the agent is a YAML spec ([`advisor.yaml`](api/src/advisor/agents/advisor.yaml)), capabilities are plug-and-play.
 - **A citation pipeline**: search results register sources under friendly ids, the model cites with `[n]` markers, and an output processor strips orphan markers and returns only the sources actually referenced.
 - **Multiturn persistence**: model message history is stored per conversation in Postgres and replayed on the next turn.
 - **Provider-agnostic model choice**: one `MODEL` env var holding a pydantic-ai `provider:model` string. Missing provider keys fail fast with the exact variable name.
 - **Keyless CI**: `MODEL=test` wires pydantic-ai's `TestModel` through the whole app, so lint, types, unit tests, and a full-stack compose smoke test run without secrets.
-- **CI-run agent evals**: a [pydantic-evals](https://ai.pydantic.dev/evals/) dataset scores citation discipline, portfolio grounding, and refusal of out-of-scope requests against a real model, gated on a repo secret.
-- **Deliberate containers**: three services with healthcheck-chained startup, non-root multi-stage images, and `docker compose watch` for development.
+- **CI-run agent evals**: a [pydantic-evals](https://ai.pydantic.dev/evals/) dataset scores citation discipline, portfolio grounding, and refusal of out-of-scope requests against a real model.
+- **Containers**: three services with healthcheck-chained startup, non-root multi-stage images, and `docker compose watch` for development.
 
 ## Architecture
 
@@ -45,10 +44,6 @@ flowchart LR
 ```
 
 Three backend layers with an enforced import boundary: `agents` (capabilities, spec, no I/O beyond tools), `service` (orchestration, persistence), `web` (FastAPI, SSE). Details in [docs/architecture.md](docs/architecture.md).
-
-## Non-goals
-
-Stated proudly: no auth, no real broker, no order execution, no migrations framework, demo data only. Nothing here is financial advice, and the UI says so on every screen.
 
 ## Development
 
