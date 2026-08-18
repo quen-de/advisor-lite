@@ -21,7 +21,7 @@ docker compose up --build
 
 Open http://localhost:8080. No keys handy? `MODEL=test` runs a fake model, the same one CI uses.
 
-## What this demonstrates
+## What this demo bundles
 
 - **Agent-as-config**: the agent is a YAML spec ([`advisor.yaml`](api/src/advisor/agents/advisor.yaml)), capabilities are plug-and-play.
 - **A citation pipeline**: search results register sources under friendly ids, the model cites with `[n]` markers, and an output processor strips orphan markers and returns only the sources actually referenced.
