@@ -13,6 +13,7 @@ from advisor.web.app import create_app, sse_event
 def test_sse_format():
     assert sse_event('delta', {'text': 'hi'}) == 'event: delta\ndata: {"text": "hi"}\n\n'
 
+
 SEED = Path(__file__).parents[2] / 'etc' / 'portfolio.yaml'
 
 
