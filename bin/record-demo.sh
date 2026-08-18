@@ -3,7 +3,7 @@
 # Needs docker compose up with real model keys. SPEED=n compresses time (default 3x).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-speed="${SPEED:-9}"
+speed="${SPEED:-5}"
 
 (cd web && node e2e/record-demo.mjs)
 src="$(ls -t web/e2e/recordings/*.webm | head -1)"

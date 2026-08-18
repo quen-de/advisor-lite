@@ -11,3 +11,5 @@ capabilities:
   - ExaSearch
   - citations
   - Instrumentation
+  - Thinking:
+      effort: low
