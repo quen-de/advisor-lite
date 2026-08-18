@@ -12,7 +12,10 @@ const portfolio = {
 };
 
 const sseBody = [
-  'event: status\ndata: {"text":"Reading the portfolio"}\n\n',
+  'event: delta\ndata: {"text":"Let me check the latest numbers."}\n\n',
+  'event: demote\ndata: {}\n\n',
+  'event: status\ndata: {"id":"t1","text":"Reading the portfolio"}\n\n',
+  'event: status_done\ndata: {"id":"t1"}\n\n',
   'event: delta\ndata: {"text":"NVDA looks stretched [1]."}\n\n',
   'event: sources\ndata: {"sources":[{"id":1,"title":"NVDA Q2","url":"https://news.example/nvda"}],"text":"NVDA looks stretched [1]."}\n\n',
   'event: done\ndata: {"chat_id":"c1"}\n\n',
@@ -42,6 +45,9 @@ test('ask a question, get a cited answer', async ({ page }) => {
   await page.getByRole('button', { name: 'Send' }).click();
 
   await expect(page.getByText('NVDA looks stretched')).toBeVisible();
+  await expect(page.locator('.bubble-thoughts')).toHaveText('Let me check the latest numbers.');
+  await expect(page.locator('.tool-line')).toContainText('Reading the portfolio');
+  await expect(page.locator('.tool-line')).toHaveClass(/tool-done/); // check mark after the hold
   await expect(page.locator('sup.cite')).toHaveText('1');
   await expect(page.getByRole('link', { name: /NVDA Q2/ })).toHaveAttribute(
     'href',

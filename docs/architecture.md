@@ -35,9 +35,10 @@ The repo is seeded from the chat's persisted citation state (every source regist
 
 | event | data | meaning |
 |---|---|---|
-| `status` | `{"id": str, "text": str}` | a tool call started; parallel calls each announce with their own id (progress lines, not persisted) |
-| `status_done` | `{"id": str}` | that tool call finished; the client retires its line |
-| `delta` | `{"text": str}` | next chunk of the answer |
+| `status` | `{"id": str, "text": str}` | a tool call started; parallel calls each announce with their own id. The client stacks the line into the current thinking bubble (not persisted) |
+| `status_done` | `{"id": str}` | that tool call finished; the client marks its line with a check |
+| `delta` | `{"text": str}` | next chunk of streamed text, optimistically treated as the answer |
+| `demote` | `{}` | the text streamed since the last demote was commentary, not the answer: a tool call followed it in the same response. The client moves it into a thinking bubble; the final round never demotes |
 | `title` | `{"chat_id": str, "title": str}` | first message's title; the titling task starts with the run, so this arrives as soon as it resolves - between other events or after `done`. The task survives disconnects |
 | `sources` | `{"sources": [{id, title, url}], "text": str}` | referenced sources plus the processed answer text |
 | `done` | `{"chat_id": str}` | exchange persisted |

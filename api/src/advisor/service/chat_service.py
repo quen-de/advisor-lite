@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 import asyncpg
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
-    FinalResultEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
@@ -144,32 +143,31 @@ class ChatService:
 
     @staticmethod
     async def _answer_deltas(request_stream) -> AsyncIterator[dict]:
-        """Forward text belonging to the final answer as delta events.
+        """Forward streamed text as delta events, reclassifying on tool calls.
 
-        A model response can carry text before tool calls; only text from the
-        part that FinalResultEvent marks (and everything after it) is the
-        answer. The marking event arrives right after that part's start event,
-        so the start content is buffered until the mark confirms it.
+        Whether a round's text is commentary or the final answer is unknowable
+        while it streams: it is commentary exactly when tool calls follow it
+        in the same response. So text streams as deltas optimistically, and
+        the moment a tool call part appears after text, a demote event tells
+        the client to move what it has accumulated into a thinking bubble.
+        The final round ends without tool calls, so its text is never demoted.
         """
-        final = False
-        pending = ''
+        emitted = False
         async for event in request_stream:
-            if isinstance(event, FinalResultEvent):
-                final = True
-                if pending:
-                    yield {'type': 'delta', 'text': pending}
-                pending = ''
-            elif isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
-                if final and event.part.content:
-                    yield {'type': 'delta', 'text': event.part.content}
-                else:
-                    pending = event.part.content
+            if isinstance(event, PartStartEvent):
+                if isinstance(event.part, TextPart):
+                    if event.part.content:
+                        emitted = True
+                        yield {'type': 'delta', 'text': event.part.content}
+                elif isinstance(event.part, ToolCallPart) and emitted:
+                    emitted = False
+                    yield {'type': 'demote'}
             elif (
-                final
-                and isinstance(event, PartDeltaEvent)
+                isinstance(event, PartDeltaEvent)
                 and isinstance(event.delta, TextPartDelta)
                 and event.delta.content_delta
             ):
+                emitted = True
                 yield {'type': 'delta', 'text': event.delta.content_delta}
 
     async def _title_chat(self, chat_id: str, user_text: str) -> str | None:

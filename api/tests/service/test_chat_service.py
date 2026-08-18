@@ -1,6 +1,15 @@
 from pathlib import Path
 
-from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+    ToolCallPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.test import TestModel
 
 from advisor.agents.capabilities.core import Position, Source
@@ -79,6 +88,30 @@ async def test_multiturn_history_grows(pool):
     await collect(service, chat['id'], 'second')
     history = await chats.get_model_history(pool, chat['id'])
     assert len(history) >= 4
+
+
+async def test_text_followed_by_tool_calls_is_demoted():
+    """Commentary before a tool round streams as deltas, then a demote event
+    reclassifies it once the tool call appears; answer-only rounds never demote."""
+
+    async def commentary_round():
+        yield PartStartEvent(index=0, part=TextPart(content='Let me '))
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta='search.'))
+        yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
+
+    events = [e async for e in ChatService._answer_deltas(commentary_round())]
+    assert events == [
+        {'type': 'delta', 'text': 'Let me '},
+        {'type': 'delta', 'text': 'search.'},
+        {'type': 'demote'},
+    ]
+
+    async def final_round():
+        yield PartStartEvent(index=0, part=ToolCallPart(tool_name='get_portfolio'))
+        yield PartStartEvent(index=1, part=TextPart(content='Answer.'))
+
+    events = [e async for e in ChatService._answer_deltas(final_round())]
+    assert events == [{'type': 'delta', 'text': 'Answer.'}]
 
 
 async def test_portfolio_edits_reach_the_next_message(pool):

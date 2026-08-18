@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ExchangeRow, Source } from '../lib/api';
 import { sendMessage } from '../lib/api';
+import type { Bubble } from './Message';
 import { Message } from './Message';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   text: string;
   sources: Source[];
+  bubbles: Bubble[];
 }
 
 function fromExchanges(exchanges: ExchangeRow[]): ChatMessage[] {
   return exchanges.flatMap((exchange) => [
-    { role: 'user' as const, text: exchange.user_text, sources: [] },
-    { role: 'assistant' as const, text: exchange.assistant_text, sources: exchange.sources },
+    { role: 'user' as const, text: exchange.user_text, sources: [], bubbles: [] },
+    {
+      role: 'assistant' as const,
+      text: exchange.assistant_text,
+      sources: exchange.sources,
+      bubbles: [],
+    },
   ]);
 }
 
@@ -26,25 +33,32 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => fromExchanges(exchanges));
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
-  const [statuses, setStatuses] = useState<{ id: string; text: string }[]>([]);
   const [idle, setIdle] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastDeltaAt = useRef(0);
-  const statusShownAt = useRef(new Map<string, number>());
+  const toolShownAt = useRef(new Map<string, number>());
   const thinkingShownAt = useRef(0);
 
-  // Every info line stays visible at least this long; tools often finish in
-  // well under a second and a line that flashes is worse than none.
-  const MIN_STATUS_MS = 2000;
+  // A tool line keeps its pending mark at least this long before the check
+  // appears; a state that flips within a frame reads as a glitch.
+  const MIN_TOOL_MS = 2000;
 
-  const dropStatusAfterMinDisplay = (id: string) => {
-    const shownAt = statusShownAt.current.get(id);
-    if (shownAt === undefined) return; // drop already scheduled
-    statusShownAt.current.delete(id);
-    const drop = () => setStatuses((current) => current.filter((s) => s.id !== id));
-    const wait = shownAt + MIN_STATUS_MS - Date.now();
-    if (wait > 0) setTimeout(drop, wait);
-    else drop();
+  const markToolDone = (id: string) => {
+    const shownAt = toolShownAt.current.get(id);
+    toolShownAt.current.delete(id);
+    const flip = () =>
+      setMessages((current) =>
+        current.map((message) => ({
+          ...message,
+          bubbles: message.bubbles.map((bubble) => ({
+            ...bubble,
+            tools: bubble.tools.map((tool) => (tool.id === id ? { ...tool, done: true } : tool)),
+          })),
+        })),
+      );
+    const wait = (shownAt ?? 0) + MIN_TOOL_MS - Date.now();
+    if (wait > 0) setTimeout(flip, wait);
+    else flip();
   };
 
   // With a reasoning model the stream goes quiet between tool rounds while
@@ -57,9 +71,10 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
     }
     const timer = setInterval(() => {
       setIdle((shown) => {
-        const quiet = Date.now() - lastDeltaAt.current > 1500;
+        const quiet =
+          Date.now() - lastDeltaAt.current > 1500 && toolShownAt.current.size === 0;
         if (!shown && quiet) thinkingShownAt.current = Date.now();
-        if (shown && !quiet && Date.now() - thinkingShownAt.current < MIN_STATUS_MS) return true;
+        if (shown && !quiet && Date.now() - thinkingShownAt.current < MIN_TOOL_MS) return true;
         return quiet;
       });
     }, 200);
@@ -72,7 +87,7 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, statuses]);
+  }, [messages]);
 
   async function submit() {
     const content = input.trim();
@@ -82,8 +97,8 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
     lastDeltaAt.current = Date.now();
     setMessages((current) => [
       ...current,
-      { role: 'user', text: content, sources: [] },
-      { role: 'assistant', text: '', sources: [] },
+      { role: 'user', text: content, sources: [], bubbles: [] },
+      { role: 'assistant', text: '', sources: [], bubbles: [] },
     ]);
     const patchLast = (patch: (message: ChatMessage) => ChatMessage) =>
       setMessages((current) => [...current.slice(0, -1), patch(current[current.length - 1])]);
@@ -92,26 +107,43 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
         if (event === 'delta') {
           const { text } = data as { text: string };
           lastDeltaAt.current = Date.now();
-          for (const id of statusShownAt.current.keys()) dropStatusAfterMinDisplay(id);
           patchLast((message) => ({ ...message, text: message.text + text }));
+        } else if (event === 'demote') {
+          // The text streamed so far was commentary before a tool round:
+          // close it into a fresh bubble and let the answer restart clean.
+          patchLast((message) => ({
+            ...message,
+            text: '',
+            bubbles: [...message.bubbles, { thoughts: message.text.trim(), tools: [] }],
+          }));
         } else if (event === 'status') {
           const { id, text } = data as { id: string; text: string };
-          statusShownAt.current.set(id, Date.now());
-          setStatuses((current) => [...current.filter((s) => s.id !== id), { id, text }]);
+          toolShownAt.current.set(id, Date.now());
+          patchLast((message) => {
+            // Tool calls stack into the bubble whose thinking preceded them;
+            // a round with no commentary still gets a bubble to live in.
+            const bubbles = message.bubbles.length
+              ? [...message.bubbles]
+              : [{ thoughts: '', tools: [] }];
+            const last = bubbles[bubbles.length - 1];
+            bubbles[bubbles.length - 1] = {
+              ...last,
+              tools: [...last.tools, { id, text, done: false }],
+            };
+            return { ...message, bubbles };
+          });
         } else if (event === 'status_done') {
           const { id } = data as { id: string };
-          dropStatusAfterMinDisplay(id);
+          markToolDone(id);
         } else if (event === 'title') {
           const { title } = data as { title: string };
           onTitle?.(chatId, title);
         } else if (event === 'sources') {
           const { sources, text } = data as { sources: Source[]; text?: string };
-          setStatuses([]);
           patchLast((message) => ({ ...message, sources, text: text ?? message.text }));
         } else if (event === 'error') {
           const { message } = data as { message: string };
-          setStatuses([]);
-          patchLast(() => ({ role: 'system', text: message, sources: [] }));
+          patchLast(() => ({ role: 'system', text: message, sources: [], bubbles: [] }));
         }
       });
     } catch {
@@ -119,11 +151,11 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
         role: 'system',
         text: 'The connection dropped. Send the message again.',
         sources: [],
+        bubbles: [],
       }));
     } finally {
       setStreaming(false);
-      setStatuses([]);
-      statusShownAt.current.clear();
+      toolShownAt.current.clear();
     }
   }
 
@@ -141,15 +173,11 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
             role={message.role}
             text={message.text}
             sources={message.sources}
+            bubbles={message.bubbles}
             streaming={streaming && index === messages.length - 1 && message.role === 'assistant'}
           />
         ))}
-        {statuses.map((s) => (
-          <p className="status-line" key={s.id}>
-            {s.text}
-          </p>
-        ))}
-        {streaming && statuses.length === 0 && idle && <p className="status-line">Thinking…</p>}
+        {streaming && idle && <p className="status-line">Thinking…</p>}
       </div>
       <form
         className="chat-input"

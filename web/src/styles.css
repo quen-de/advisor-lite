@@ -553,6 +553,53 @@ sup.cite {
   animation: pulse 1.6s var(--ease-out) infinite;
 }
 
+/* Thinking bubbles: one per reasoning sequence, quiet by design. The
+   commentary the model streamed before a tool round plus that round's
+   tool calls; the answer itself streams outside, at full contrast. */
+
+.thinking-bubble {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-left: 2px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+
+.bubble-thoughts {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.bubble-tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bubble-thoughts + .bubble-tools {
+  margin-top: var(--space-1);
+}
+
+.tool-line {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  animation: pulse 1.6s var(--ease-out) infinite;
+}
+
+.tool-line.tool-done {
+  animation: none;
+  color: var(--text-faint);
+}
+
+.tool-mark {
+  display: inline-block;
+  width: 1.2em;
+  color: var(--text-muted);
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.45;
