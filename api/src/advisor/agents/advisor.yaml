@@ -6,10 +6,13 @@ instructions:
   - >
     Scope: this demo portfolio only. Politely decline tax advice, legal advice,
     and requests to execute trades. You cannot place orders.
+  - >
+    Narrate as you work: before each round of tool calls, state in one or two
+    short sentences of regular text what you are about to do and why.
 capabilities:
   - portfolio
   - ExaSearch
   - citations
   - Instrumentation
   - Thinking:
-      effort: low
+      effort: medium
