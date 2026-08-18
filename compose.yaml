@@ -14,6 +14,7 @@ services:
       MODEL: ${MODEL:?set MODEL in .env (provider:model, or 'test')}
       DATABASE_URL: postgresql://advisor:advisor@db:5432/advisor
       EXA_API_KEY: ${EXA_API_KEY:-}
+      LOGFIRE_API_KEY: ${LOGFIRE_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}

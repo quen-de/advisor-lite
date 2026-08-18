@@ -40,5 +40,11 @@ async def test_spec_wires_tools_and_instructions():
 
 
 def test_capability_types_cover_spec():
+    from pydantic_ai.capabilities import CAPABILITY_TYPES as BUILTIN_TYPES
+
     spec_names = set(yaml.safe_load(ADVISOR_SPEC_PATH.read_text())['capabilities'])
-    assert spec_names <= {c.get_serialization_name() for c in CAPABILITY_TYPES}
+    known = {
+        c if isinstance(c, str) else c.get_serialization_name()
+        for c in (*CAPABILITY_TYPES, *BUILTIN_TYPES)
+    }
+    assert spec_names <= known

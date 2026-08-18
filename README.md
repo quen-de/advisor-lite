@@ -64,6 +64,11 @@ npm run lint && npm run typecheck
 # whole stack with hot reload
 docker compose watch
 
+# observability (optional): put a Logfire write token in .env as LOGFIRE_API_KEY
+# and restart. The agent's Instrumentation capability then streams every run,
+# model request, and tool call to Logfire as OTel spans. Without the token the
+# spans hit OpenTelemetry's no-op provider: nothing is sent, nothing breaks.
+
 # evals against a real model (from api/); dataset and runner live in evals/
 MODEL=anthropic:claude-sonnet-4-6 uv run python -m evals.run
 ```

@@ -16,6 +16,7 @@ Each capability is a pydantic-ai `AbstractCapability[AdvisorDeps]` subclass cont
 
 - `PortfolioCapability` (ours): the `get_portfolio` tool plus grounding instructions.
 - `ExaSearch` (from pydantic-ai-harness): `web_search` and `get_page` tools backed by the Exa API, keyed by `EXA_API_KEY`.
+- `Instrumentation` (pydantic-ai built-in): OTel spans for runs, model requests, and tool calls; live only when startup finds `LOGFIRE_API_KEY` and configures Logfire, a no-op otherwise.
 - `CitationsCapability` (ours): citation instructions plus two hooks. `after_tool_execute` registers the sources any `ToolReturn` reports in `metadata['sources']` and appends their citation ids to the result the model sees; `after_output_process` strips orphan markers and records the referenced sources on the run's `CitationRepo`.
 
 `advisor.yaml` is a native pydantic-ai agent spec loaded with `Agent.from_file`, passing `deps_type`, the capability types, and the runtime model at each call site. Capability names resolve via each class's serialization name; unknown names fail at load.

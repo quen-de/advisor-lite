@@ -1,4 +1,5 @@
 import json
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -15,6 +16,17 @@ from advisor.service.db import apply_schema, create_pool
 
 def sse_event(event: str, data: dict) -> str:
     return f'event: {event}\ndata: {json.dumps(data)}\n\n'
+
+
+def configure_logfire() -> None:
+    """Point the agent's Instrumentation capability at Logfire when a token
+    is set. Without one the capability's spans hit OTel's no-op provider."""
+    token = os.environ.get('LOGFIRE_API_KEY')
+    if not token:
+        return
+    import logfire
+
+    logfire.configure(token=token, service_name='advisor-api', console=False)
 
 
 class MessageIn(BaseModel):
@@ -34,6 +46,7 @@ class CashIn(BaseModel):
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings or Settings.from_env()
+    configure_logfire()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
