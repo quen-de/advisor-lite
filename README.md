@@ -4,7 +4,9 @@ A demo portfolio-counseling agent. Built small on purpose to show how I build, d
 
 You chat with an investment counselor about a seeded demo portfolio, editable in place from the web view. The agent reads the current holdings, searches the web when a question needs current information, and answers with inline citations you can follow to the source. Conversations are persistent and multiturn.
 
-<video src="https://github.com/quen-de/advisor-lite/raw/main/docs/demo.mp4" width="880" muted controls playsinline></video>
+![demo](docs/demo.gif)
+
+[▶ Full demo video (1:02)](docs/demo.mp4)
 <!-- re-record: bin/record-demo.sh against a running stack with real keys; banner mp4: trim the webm with ffmpeg -t -->
 
 
