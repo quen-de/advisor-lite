@@ -5,7 +5,7 @@ A demo portfolio-counseling agent. Built small on purpose to show how I build, d
 You chat with an investment counselor about a seeded demo portfolio, editable in place from the web view. The agent reads the current holdings, searches the web when a question needs current information, and answers with inline citations you can follow to the source. Conversations are persistent and multiturn.
 
 ![demo](docs/demo.gif)
-<!-- owner records: asciinema or Kap, 20s, ask-and-cite flow -->
+<!-- re-record: bin/record-demo.sh against a running stack with real keys -->
 
 ## Quickstart (60 seconds)
 
