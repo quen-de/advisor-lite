@@ -1,0 +1,132 @@
+from pathlib import Path
+
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
+from pydantic_ai.models.test import TestModel
+
+from advisor.agents.capabilities.core import Position, Source
+from advisor.config import Settings
+from advisor.service import chats, portfolio_store
+from advisor.service.chat_service import ChatService
+
+SEED = Path(__file__).parents[2] / 'etc' / 'portfolio.yaml'
+
+
+def make_service(pool) -> ChatService:
+    settings = Settings(model='test', database_url='', portfolio_path=SEED)
+    return ChatService(pool=pool, settings=settings)
+
+
+async def collect(service, chat_id, text):
+    return [event async for event in service.stream_reply(chat_id, text)]
+
+
+async def test_stream_shape_and_persistence(pool):
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    events = await collect(service, chat['id'], 'What do I hold?')
+    kinds = [e['type'] for e in events]
+    # The title races the answer, so it may land anywhere after the first
+    # event; sources then done close the exchange.
+    assert 'title' in kinds
+    assert kinds.index('sources') < kinds.index('done')
+    assert 'delta' in kinds
+    assert ''.join(e['text'] for e in events if e['type'] == 'delta')
+    exchanges = await chats.get_exchanges(pool, chat['id'])
+    assert exchanges[0]['user_text'] == 'What do I hold?'
+
+
+async def test_status_events_surface_tool_calls(pool):
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    events = await collect(service, chat['id'], 'What do I hold?')
+    statuses = [e['text'] for e in events if e['type'] == 'status']
+    assert 'Reading the portfolio' in statuses  # TestModel calls every tool
+    sources_event = next(e for e in events if e['type'] == 'sources')
+    assert sources_event['text']
+
+
+async def test_first_message_titles_chat(pool):
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    events = await collect(service, chat['id'], 'Should I trim NVDA?')
+    titles = [e['title'] for e in events if e['type'] == 'title']
+    assert titles
+    assert (await chats.list_chats(pool))[0]['title'] == titles[0]
+    followup = await collect(service, chat['id'], 'And MSFT?')
+    assert not [e for e in followup if e['type'] == 'title']
+
+
+async def test_title_survives_client_disconnect(pool):
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    stream = service.stream_reply(chat['id'], 'What do I hold?')
+    async for event in stream:
+        if event['type'] == 'done':
+            break
+    await stream.aclose()  # client walks away before the title event
+    for task in list(service._background):
+        await task
+    assert (await chats.list_chats(pool))[0]['title'] != 'New conversation'
+
+
+async def test_multiturn_history_grows(pool):
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    await collect(service, chat['id'], 'first')
+    await collect(service, chat['id'], 'second')
+    history = await chats.get_model_history(pool, chat['id'])
+    assert len(history) >= 4
+
+
+async def test_portfolio_edits_reach_the_next_message(pool):
+    """The agent reads the portfolio from the database per message, so an
+    edit made between messages shows up in the tool result."""
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    await portfolio_store.upsert_position(
+        pool, Position(ticker='ZZZT', name='Zeta Test', quantity=5, cost_basis=10, currency='USD')
+    )
+    events = await collect(service, chat['id'], 'What do I hold?')
+    sources_event = next(e for e in events if e['type'] == 'sources')
+    assert 'ZZZT' in sources_event['text']  # TestModel echoes the tool result
+
+
+async def test_follow_up_keeps_prior_turn_citations(pool, monkeypatch):
+    """A later answer may cite a source registered on an earlier turn: the
+    repo is seeded from the chat's persisted citation state, so the marker
+    survives and the source rides along with the new exchange."""
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+    state = [Source(id=1, title='NVDA Q2', url='https://news.example/nvda')]
+    first_turn = ModelMessagesTypeAdapter.dump_json(
+        [ModelRequest(parts=[UserPromptPart(content='news?')])]
+    )
+    await chats.append_exchange(
+        pool, chat['id'], 'news?', 'NVDA beat [1].', state, first_turn, citation_state=state
+    )
+    monkeypatch.setattr(
+        'advisor.service.chat_service.resolve_model',
+        lambda settings, test_call_tools='all': TestModel(
+            call_tools=[], custom_output_text='Still true [1].'
+        ),
+    )
+    events = await collect(service, chat['id'], 'still true?')
+    sources_event = next(e for e in events if e['type'] == 'sources')
+    assert sources_event['text'] == 'Still true [1].'
+    assert [s['url'] for s in sources_event['sources']] == ['https://news.example/nvda']
+    exchanges = await chats.get_exchanges(pool, chat['id'])
+    assert exchanges[-1]['assistant_text'] == 'Still true [1].'
+    assert exchanges[-1]['sources'] == state
+
+
+async def test_error_yields_error_event_and_no_row(pool, monkeypatch):
+    service = make_service(pool)
+    chat = await chats.create_chat(pool)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError('kaput')
+
+    monkeypatch.setattr('advisor.service.chat_service.resolve_model', boom)
+    events = await collect(service, chat['id'], 'hi')
+    assert events == [{'type': 'error', 'message': 'The agent failed to answer. Try again.'}]
+    assert await chats.get_exchanges(pool, chat['id']) == []

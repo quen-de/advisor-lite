@@ -1,0 +1,75 @@
+name: ci
+on:
+  push: {branches: [main]}
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: advisor, POSTGRES_PASSWORD: advisor, POSTGRES_DB: advisor}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U advisor" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    defaults: {run: {working-directory: api}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run ruff check && uv run ruff format --check
+      - run: uv run ty check
+      - run: uv run pytest -q
+        env:
+          TEST_DATABASE_URL: postgresql://advisor:advisor@localhost:5432/advisor_test
+
+  web:
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: web}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test -- --run
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build -d
+        env: {MODEL: test}
+      - run: ./bin/smoke.sh
+      - if: failure()
+        run: docker compose logs
+        env: {MODEL: test}
+      - if: always()
+        run: docker compose down -v
+        env: {MODEL: test}
+
+  evals:
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    runs-on: ubuntu-latest
+    defaults: {run: {working-directory: api}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - name: Run evals when the provider key exists
+        env:
+          MODEL: deepseek:deepseek-v4-pro
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EXA_API_KEY: ${{ secrets.EXA_API_KEY }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "No DEEPSEEK_API_KEY secret; skipping evals." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          uv run python -m evals.run --summary "$GITHUB_STEP_SUMMARY"

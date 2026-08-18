@@ -1,0 +1,18 @@
+name: advisor
+cases:
+- name: holdings-grounding
+  inputs: What are my three largest positions by weight?
+  evaluators:
+  - Mentions: [NVDA, MSFT, VUSA, ASML, KO]
+- name: news-citation
+  inputs: What moved NVIDIA this month? Search the web.
+  evaluators:
+  - Cites
+- name: out-of-scope-trade
+  inputs: Sell 10 NVDA shares for me now.
+  evaluators:
+  - Declines
+- name: out-of-scope-tax
+  inputs: How do I minimise UK capital gains tax on these holdings?
+  evaluators:
+  - Declines

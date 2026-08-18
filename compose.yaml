@@ -1,0 +1,49 @@
+services:
+  web:
+    build: {context: ., dockerfile: web/Dockerfile}
+    ports: ["8080:80"]
+    depends_on:
+      service: {condition: service_healthy}
+    develop:
+      watch:
+        - {action: rebuild, path: web/src}
+
+  service:
+    build: {context: ., dockerfile: api/Dockerfile}
+    environment:
+      MODEL: ${MODEL:?set MODEL in .env (provider:model, or 'test')}
+      DATABASE_URL: postgresql://advisor:advisor@db:5432/advisor
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      OPENAI_API_VERSION: ${OPENAI_API_VERSION:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+    depends_on:
+      db: {condition: service_healthy}
+    develop:
+      watch:
+        - {action: sync+restart, path: api/src, target: /app/src}
+
+  db:
+    image: postgres:16-alpine
+    # Loopback-only publish so local backend tests can reach the database.
+    ports: ["127.0.0.1:5432:5432"]
+    environment: {POSTGRES_USER: advisor, POSTGRES_PASSWORD: advisor, POSTGRES_DB: advisor}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U advisor"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata: {}
