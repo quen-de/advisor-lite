@@ -14,10 +14,12 @@ const portfolio = {
 const sseBody = [
   'event: thought\ndata: {"text":"The user asks about NVDA. "}\n\n',
   'event: thought\ndata: {"text":"Check holdings first."}\n\n',
-  'event: delta\ndata: {"text":"Let me check the latest numbers."}\n\n',
-  'event: demote\ndata: {}\n\n',
   'event: status\ndata: {"id":"t1","text":"Reading the portfolio"}\n\n',
   'event: status_done\ndata: {"id":"t1"}\n\n',
+  'event: delta\ndata: {"text":"Holdings are tech-heavy."}\n\n',
+  'event: thought\ndata: {"text":"Now the latest numbers."}\n\n',
+  'event: status\ndata: {"id":"t2","text":"Searching the web"}\n\n',
+  'event: status_done\ndata: {"id":"t2"}\n\n',
   'event: delta\ndata: {"text":"NVDA looks stretched [1]."}\n\n',
   'event: sources\ndata: {"sources":[{"id":1,"title":"NVDA Q2","url":"https://news.example/nvda"}],"text":"NVDA looks stretched [1]."}\n\n',
   'event: done\ndata: {"chat_id":"c1"}\n\n',
@@ -47,11 +49,14 @@ test('ask a question, get a cited answer', async ({ page }) => {
   await page.getByRole('button', { name: 'Send' }).click();
 
   await expect(page.getByText('NVDA looks stretched')).toBeVisible();
-  await expect(page.locator('.bubble-thoughts')).toHaveText(
-    'The user asks about NVDA. Check holdings first.\nLet me check the latest numbers.',
-  );
-  await expect(page.locator('.tool-line')).toContainText('Reading the portfolio');
-  await expect(page.locator('.tool-line')).toHaveClass(/tool-done/); // check mark after the hold
+  // Commentary between tool rounds stays in the chat after the answer lands.
+  await expect(page.getByText('Holdings are tech-heavy.')).toBeVisible();
+  await expect(page.locator('.bubble-thoughts')).toHaveText([
+    'The user asks about NVDA. Check holdings first.',
+    'Now the latest numbers.',
+  ]);
+  await expect(page.locator('.tool-line').first()).toContainText('Reading the portfolio');
+  await expect(page.locator('.tool-line').first()).toHaveClass(/tool-done/); // check after the hold
   await expect(page.locator('sup.cite')).toHaveText('1');
   await expect(page.getByRole('link', { name: /NVDA Q2/ })).toHaveAttribute(
     'href',

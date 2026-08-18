@@ -5,6 +5,7 @@ import asyncpg
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 from advisor.agents.capabilities.core import Source
+from advisor.service.display import display_parts
 
 
 class ChatRow(TypedDict):
@@ -17,6 +18,7 @@ class ExchangeRow(TypedDict):
     user_text: str
     assistant_text: str
     sources: list[Source]
+    parts: list[dict]
 
 
 async def create_chat(pool: asyncpg.Pool, title: str = 'New conversation') -> ChatRow:
@@ -45,8 +47,12 @@ async def delete_chat(pool: asyncpg.Pool, chat_id: str) -> None:
 
 
 async def get_exchanges(pool: asyncpg.Pool, chat_id: str) -> list[ExchangeRow]:
+    """Exchanges with their display parts (bubbles and text segments)
+    rebuilt from each stored message batch, so a reload shows the same
+    transcript the live stream assembled."""
     rows = await pool.fetch(
-        'select user_text, assistant_text, sources from exchanges where chat_id = $1 order by id',
+        'select user_text, assistant_text, sources, model_messages '
+        'from exchanges where chat_id = $1 order by id',
         chat_id,
     )
     return [
@@ -54,6 +60,10 @@ async def get_exchanges(pool: asyncpg.Pool, chat_id: str) -> list[ExchangeRow]:
             user_text=r['user_text'],
             assistant_text=r['assistant_text'],
             sources=json.loads(r['sources']),
+            parts=display_parts(
+                ModelMessagesTypeAdapter.validate_json(r['model_messages']),
+                r['assistant_text'],
+            ),
         )
         for r in rows
     ]

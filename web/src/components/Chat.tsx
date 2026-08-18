@@ -1,24 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ExchangeRow, Source } from '../lib/api';
+import type { ExchangeRow, MessagePart, Source } from '../lib/api';
 import { sendMessage } from '../lib/api';
-import type { Bubble } from './Message';
 import { Message } from './Message';
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
-  text: string;
+  parts: MessagePart[];
   sources: Source[];
-  bubbles: Bubble[];
 }
 
 function fromExchanges(exchanges: ExchangeRow[]): ChatMessage[] {
   return exchanges.flatMap((exchange) => [
-    { role: 'user' as const, text: exchange.user_text, sources: [], bubbles: [] },
+    {
+      role: 'user' as const,
+      parts: [{ kind: 'text' as const, text: exchange.user_text }],
+      sources: [],
+    },
     {
       role: 'assistant' as const,
-      text: exchange.assistant_text,
+      parts: exchange.parts ?? [{ kind: 'text' as const, text: exchange.assistant_text }],
       sources: exchange.sources,
-      bubbles: [],
     },
   ]);
 }
@@ -36,6 +37,7 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
   const [idle, setIdle] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const programmaticScroll = useRef(false);
   const lastDeltaAt = useRef(0);
   const toolShownAt = useRef(new Map<string, number>());
   const thinkingShownAt = useRef(0);
@@ -51,10 +53,16 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
       setMessages((current) =>
         current.map((message) => ({
           ...message,
-          bubbles: message.bubbles.map((bubble) => ({
-            ...bubble,
-            tools: bubble.tools.map((tool) => (tool.id === id ? { ...tool, done: true } : tool)),
-          })),
+          parts: message.parts.map((part) =>
+            part.kind === 'bubble'
+              ? {
+                  ...part,
+                  tools: part.tools.map((tool) =>
+                    tool.id === id ? { ...tool, done: true } : tool,
+                  ),
+                }
+              : part,
+          ),
         })),
       );
     const wait = (shownAt ?? 0) + MIN_TOOL_MS - Date.now();
@@ -87,10 +95,13 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
     setMessages(fromExchanges(exchanges));
   }, [chatId, exchanges]);
 
-  // Follow the stream only while the reader is at (or near) the bottom;
-  // scrolling up detaches, scrolling back near the bottom reattaches.
+  // Follow the stream only while the reader stays at the bottom. Scrolling
+  // up (wheel, or dragging past the threshold) detaches; coming back near
+  // the bottom reattaches. Programmatic scrolls don't count as the reader's.
   useEffect(() => {
-    if (pinned.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (!pinned.current || !scrollRef.current) return;
+    programmaticScroll.current = true;
+    scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
   async function submit() {
@@ -102,60 +113,51 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
     lastDeltaAt.current = Date.now();
     setMessages((current) => [
       ...current,
-      { role: 'user', text: content, sources: [], bubbles: [] },
-      { role: 'assistant', text: '', sources: [], bubbles: [] },
+      { role: 'user', parts: [{ kind: 'text', text: content }], sources: [] },
+      { role: 'assistant', parts: [], sources: [] },
     ]);
     const patchLast = (patch: (message: ChatMessage) => ChatMessage) =>
       setMessages((current) => [...current.slice(0, -1), patch(current[current.length - 1])]);
     try {
       await sendMessage(chatId, content, (event, data) => {
         if (event === 'delta') {
+          // Text belongs to the chat itself, commentary and answer alike.
           const { text } = data as { text: string };
           lastDeltaAt.current = Date.now();
-          patchLast((message) => ({ ...message, text: message.text + text }));
+          patchLast((message) => {
+            const last = message.parts[message.parts.length - 1];
+            const parts =
+              last && last.kind === 'text'
+                ? [...message.parts.slice(0, -1), { ...last, text: last.text + text }]
+                : [...message.parts, { kind: 'text' as const, text }];
+            return { ...message, parts };
+          });
         } else if (event === 'thought') {
           // Reasoning stream. A bubble stays open until tool calls land in
           // it, so a thought after a tool round starts the next bubble.
           const { text } = data as { text: string };
           lastDeltaAt.current = Date.now();
           patchLast((message) => {
-            const last = message.bubbles[message.bubbles.length - 1];
-            const bubbles =
-              last && last.tools.length === 0
-                ? [...message.bubbles.slice(0, -1), { ...last, thoughts: last.thoughts + text }]
-                : [...message.bubbles, { thoughts: text, tools: [] }];
-            return { ...message, bubbles };
-          });
-        } else if (event === 'demote') {
-          // The text streamed so far was commentary before a tool round:
-          // fold it into the round's open bubble, or a fresh one.
-          patchLast((message) => {
-            const thoughts = message.text.trim();
-            const last = message.bubbles[message.bubbles.length - 1];
-            const bubbles =
-              last && last.tools.length === 0
-                ? [
-                    ...message.bubbles.slice(0, -1),
-                    { ...last, thoughts: [last.thoughts.trim(), thoughts].filter(Boolean).join('\n') },
-                  ]
-                : [...message.bubbles, { thoughts, tools: [] }];
-            return { ...message, text: '', bubbles };
+            const last = message.parts[message.parts.length - 1];
+            const parts =
+              last && last.kind === 'bubble' && last.tools.length === 0
+                ? [...message.parts.slice(0, -1), { ...last, thoughts: last.thoughts + text }]
+                : [...message.parts, { kind: 'bubble' as const, thoughts: text, tools: [] }];
+            return { ...message, parts };
           });
         } else if (event === 'status') {
           const { id, text } = data as { id: string; text: string };
           toolShownAt.current.set(id, Date.now());
           patchLast((message) => {
             // Tool calls stack into the bubble whose thinking preceded them;
-            // a round with no commentary still gets a bubble to live in.
-            const bubbles = message.bubbles.length
-              ? [...message.bubbles]
-              : [{ thoughts: '', tools: [] }];
-            const last = bubbles[bubbles.length - 1];
-            bubbles[bubbles.length - 1] = {
-              ...last,
-              tools: [...last.tools, { id, text, done: false }],
-            };
-            return { ...message, bubbles };
+            // a round with no thinking still gets a bubble to live in.
+            const last = message.parts[message.parts.length - 1];
+            const line = { id, text, done: false };
+            const parts =
+              last && last.kind === 'bubble'
+                ? [...message.parts.slice(0, -1), { ...last, tools: [...last.tools, line] }]
+                : [...message.parts, { kind: 'bubble' as const, thoughts: '', tools: [line] }];
+            return { ...message, parts };
           });
         } else if (event === 'status_done') {
           const { id } = data as { id: string };
@@ -164,19 +166,32 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
           const { title } = data as { title: string };
           onTitle?.(chatId, title);
         } else if (event === 'sources') {
+          // The processed text replaces the final segment; earlier segments
+          // (commentary between tool rounds) stay as they streamed.
           const { sources, text } = data as { sources: Source[]; text?: string };
-          patchLast((message) => ({ ...message, sources, text: text ?? message.text }));
+          patchLast((message) => {
+            const parts = [...message.parts];
+            const last = parts[parts.length - 1];
+            if (text !== undefined) {
+              if (last && last.kind === 'text') parts[parts.length - 1] = { ...last, text };
+              else parts.push({ kind: 'text', text });
+            }
+            return { ...message, sources, parts };
+          });
         } else if (event === 'error') {
           const { message } = data as { message: string };
-          patchLast(() => ({ role: 'system', text: message, sources: [], bubbles: [] }));
+          patchLast(() => ({
+            role: 'system',
+            parts: [{ kind: 'text', text: message }],
+            sources: [],
+          }));
         }
       });
     } catch {
       patchLast(() => ({
         role: 'system',
-        text: 'The connection dropped. Send the message again.',
+        parts: [{ kind: 'text', text: 'The connection dropped. Send the message again.' }],
         sources: [],
-        bubbles: [],
       }));
     } finally {
       setStreaming(false);
@@ -189,7 +204,14 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
       <div
         className="chat-scroll"
         ref={scrollRef}
+        onWheel={(event) => {
+          if (event.deltaY < 0) pinned.current = false;
+        }}
         onScroll={() => {
+          if (programmaticScroll.current) {
+            programmaticScroll.current = false;
+            return;
+          }
           const el = scrollRef.current;
           if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         }}
@@ -203,9 +225,8 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
           <Message
             key={index}
             role={message.role}
-            text={message.text}
+            parts={message.parts}
             sources={message.sources}
-            bubbles={message.bubbles}
             streaming={streaming && index === messages.length - 1 && message.role === 'assistant'}
           />
         ))}

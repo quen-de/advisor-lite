@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Source } from '../lib/api';
+import type { MessagePart, Source } from '../lib/api';
 
 interface HastNode {
   type: string;
@@ -45,64 +45,53 @@ function citationChips() {
   };
 }
 
-export interface ToolLine {
-  id: string;
-  text: string;
-  done: boolean;
-}
-
-/** One closed-or-growing thinking sequence: the commentary the model
- * streamed before a tool round, plus the tool calls of that round. */
-export interface Bubble {
-  thoughts: string;
-  tools: ToolLine[];
-}
-
 export interface MessageProps {
   role: 'user' | 'assistant' | 'system';
-  text: string;
+  parts: MessagePart[];
   sources: Source[];
-  bubbles?: Bubble[];
   streaming?: boolean;
 }
 
-export function Message({ role, text, sources, bubbles = [], streaming }: MessageProps) {
+export function Message({ role, parts, sources, streaming }: MessageProps) {
   return (
     <div className={`message message-${role}`}>
-      {bubbles.map((bubble, index) => (
-        <div className="thinking-bubble" key={index}>
-          {bubble.thoughts && (
-            <div className="bubble-scroll">
-              <p className="bubble-thoughts">{bubble.thoughts}</p>
-            </div>
-          )}
-          {bubble.tools.length > 0 && (
-            <ul className="bubble-tools">
-              {bubble.tools.map((tool, toolIndex) => (
-                <li
-                  key={tool.id || toolIndex}
-                  className={tool.done ? 'tool-line tool-done' : 'tool-line'}
-                >
-                  <span className="tool-mark" aria-hidden="true">
-                    {tool.done ? '✓' : '·'}
-                  </span>
-                  {tool.text}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))}
-      <div className="message-body">
-        {role === 'assistant' ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[citationChips]}>
-            {text}
-          </ReactMarkdown>
+      {parts.map((part, index) =>
+        part.kind === 'bubble' ? (
+          <div className="thinking-bubble" key={index}>
+            {part.thoughts && (
+              <div className="bubble-scroll">
+                <p className="bubble-thoughts">{part.thoughts}</p>
+              </div>
+            )}
+            {part.tools.length > 0 && (
+              <ul className="bubble-tools">
+                {part.tools.map((tool, toolIndex) => (
+                  <li
+                    key={tool.id ?? toolIndex}
+                    className={tool.done ? 'tool-line tool-done' : 'tool-line'}
+                  >
+                    <span className="tool-mark" aria-hidden="true">
+                      {tool.done ? '✓' : '·'}
+                    </span>
+                    {tool.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         ) : (
-          <p>{text}</p>
-        )}
-        {streaming && <span className="caret" aria-hidden="true" />}
-      </div>
+          <div className="message-body" key={index}>
+            {role === 'assistant' ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[citationChips]}>
+                {part.text}
+              </ReactMarkdown>
+            ) : (
+              <p>{part.text}</p>
+            )}
+          </div>
+        ),
+      )}
+      {streaming && <span className="caret" aria-hidden="true" />}
       {sources.length > 0 && (
         <ul className="sources">
           {sources.map((source) => (

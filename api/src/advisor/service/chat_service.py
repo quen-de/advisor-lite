@@ -15,42 +15,22 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ThinkingPart,
     ThinkingPartDelta,
-    ToolCallPart,
 )
 
 from advisor.agents import ADVISOR_SPEC_PATH, CAPABILITY_TYPES
 from advisor.agents.capabilities.core import AdvisorDeps, CitationRepo
 from advisor.config import Settings, resolve_model
 from advisor.service import chats, portfolio_store
+from advisor.service.display import status_text
 
 logger = logging.getLogger(__name__)
 
 ERROR_MESSAGE = 'The agent failed to answer. Try again.'
 
-# Text a model streams before its tool calls is commentary, not answer, but
-# which one it is only becomes knowable once a tool call follows. Holding the
-# first characters of every text part back this long settles most cases
-# quietly: commentary is short and a tool call confirms it while it is still
-# buffered, while a real answer overflows the holdback within a second.
-TEXT_HOLDBACK = 300
-
 TITLE_INSTRUCTIONS = (
     'Title a conversation that opens with the given message. '
     'Three to six words, plain text, no quotes, no trailing punctuation.'
 )
-
-
-def status_text(part: ToolCallPart) -> str:
-    """Human-readable progress line for a tool call."""
-    if part.tool_name == 'get_portfolio':
-        return 'Reading the portfolio'
-    if part.tool_name == 'web_search':
-        query = part.args_as_dict().get('query')
-        return f'Searching the web for "{query}"' if query else 'Searching the web'
-    if part.tool_name == 'get_page':
-        url = part.args_as_dict().get('url')
-        return f'Reading {url}' if url else 'Reading a page'
-    return f'Running {part.tool_name}'
 
 
 @dataclass
@@ -152,55 +132,24 @@ class ChatService:
 
     @staticmethod
     async def _answer_deltas(request_stream) -> AsyncIterator[dict]:
-        """Route streamed model output to thought, delta and demote events.
+        """Forward streamed model output as thought and delta events.
 
-        Thinking parts are commentary by construction and stream out as
-        thought events immediately. Plain text is ambiguous: it is commentary
-        exactly when tool calls follow it in the same response, which is
-        unknowable while it streams. So text buffers up to TEXT_HOLDBACK
-        characters first: a tool call arriving while the buffer holds
-        confirms commentary, which flushes as a thought and never flashes as
-        answer. Text that overflows the holdback streams as answer deltas,
-        with a demote event as the fallback if a tool call follows after all.
-        Anything still buffered when the stream ends is answer text.
+        Thinking parts are reasoning and stream out as thought events for
+        the current bubble. Every text part - commentary between tool rounds
+        and the answer alike - streams as delta events: text belongs to the
+        chat itself and stays there, so nothing needs reclassifying.
         """
-        buffer: list[str] = []
-        streaming_answer = False
-        thought_sent = False
         async for event in request_stream:
             part = event.part if isinstance(event, PartStartEvent) else None
             delta = event.delta if isinstance(event, PartDeltaEvent) else None
             if isinstance(part, ThinkingPart) and part.content:
-                thought_sent = True
                 yield {'type': 'thought', 'text': part.content}
             elif isinstance(delta, ThinkingPartDelta) and delta.content_delta:
-                thought_sent = True
                 yield {'type': 'thought', 'text': delta.content_delta}
-            elif isinstance(part, TextPart) or isinstance(delta, TextPartDelta):
-                chunk = delta.content_delta if isinstance(delta, TextPartDelta) else ''
-                if isinstance(part, TextPart):
-                    chunk = part.content
-                if not chunk:
-                    continue
-                if streaming_answer:
-                    yield {'type': 'delta', 'text': chunk}
-                    continue
-                buffer.append(chunk)
-                if sum(map(len, buffer)) >= TEXT_HOLDBACK:
-                    streaming_answer = True
-                    yield {'type': 'delta', 'text': ''.join(buffer)}
-                    buffer.clear()
-            elif isinstance(part, ToolCallPart):
-                if buffer:
-                    text = ('\n' if thought_sent else '') + ''.join(buffer)
-                    buffer.clear()
-                    thought_sent = True
-                    yield {'type': 'thought', 'text': text}
-                elif streaming_answer:
-                    streaming_answer = False
-                    yield {'type': 'demote'}
-        if buffer:
-            yield {'type': 'delta', 'text': ''.join(buffer)}
+            elif isinstance(part, TextPart) and part.content:
+                yield {'type': 'delta', 'text': part.content}
+            elif isinstance(delta, TextPartDelta) and delta.content_delta:
+                yield {'type': 'delta', 'text': delta.content_delta}
 
     async def _title_chat(self, chat_id: str, user_text: str) -> str | None:
         """Give a fresh chat a short title from its opening message. Best-effort."""

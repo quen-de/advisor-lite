@@ -7,7 +7,7 @@ describe('Message', () => {
     render(
       <Message
         role="assistant"
-        text="NVDA beat estimates [1]."
+        parts={[{ kind: 'text', text: 'NVDA beat estimates [1].' }]}
         sources={[{ id: 1, title: 'NVDA Q2', url: 'https://news.example/nvda' }]}
       />,
     );
@@ -22,7 +22,7 @@ describe('Message', () => {
     render(
       <Message
         role="assistant"
-        text={'| Ticker | Weight |\n|---|---|\n| NVDA | 8.7% |'}
+        parts={[{ kind: 'text', text: '| Ticker | Weight |\n|---|---|\n| NVDA | 8.7% |' }]}
         sources={[]}
       />,
     );
@@ -31,8 +31,37 @@ describe('Message', () => {
   });
 
   it('renders plain user text without sources block', () => {
-    render(<Message role="user" text="What do I hold?" sources={[]} />);
+    render(
+      <Message role="user" parts={[{ kind: 'text', text: 'What do I hold?' }]} sources={[]} />,
+    );
     expect(screen.getByText('What do I hold?')).toBeInTheDocument();
     expect(screen.queryByRole('list')).not.toBeInTheDocument();
+  });
+
+  it('interleaves bubbles and text segments in order', () => {
+    render(
+      <Message
+        role="assistant"
+        parts={[
+          {
+            kind: 'bubble',
+            thoughts: 'Check holdings first.',
+            tools: [{ text: 'Reading the portfolio', done: true }],
+          },
+          { kind: 'text', text: 'The portfolio is tech-heavy.' },
+          { kind: 'bubble', thoughts: 'Now search.', tools: [{ text: 'Searching', done: false }] },
+          { kind: 'text', text: 'Final answer.' },
+        ]}
+        sources={[]}
+      />,
+    );
+    const rendered = screen.getAllByText(/./, { selector: '.bubble-thoughts, .message-body p' });
+    expect(rendered.map((node) => node.textContent)).toEqual([
+      'Check holdings first.',
+      'The portfolio is tech-heavy.',
+      'Now search.',
+      'Final answer.',
+    ]);
+    expect(screen.getByText('✓')).toBeInTheDocument();
   });
 });

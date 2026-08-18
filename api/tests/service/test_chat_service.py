@@ -17,7 +17,7 @@ from pydantic_ai.models.test import TestModel
 from advisor.agents.capabilities.core import Position, Source
 from advisor.config import Settings
 from advisor.service import chats, portfolio_store
-from advisor.service.chat_service import TEXT_HOLDBACK, ChatService
+from advisor.service.chat_service import ChatService
 
 SEED = Path(__file__).parents[2] / 'etc' / 'portfolio.yaml'
 
@@ -44,6 +44,12 @@ async def test_stream_shape_and_persistence(pool):
     assert ''.join(e['text'] for e in events if e['type'] == 'delta')
     exchanges = await chats.get_exchanges(pool, chat['id'])
     assert exchanges[0]['user_text'] == 'What do I hold?'
+    # Display parts rebuild from the stored batch: the tool round became a
+    # bubble and the last part carries the processed answer.
+    parts = exchanges[0]['parts']
+    tool_lines = [t['text'] for p in parts if p['kind'] == 'bubble' for t in p['tools']]
+    assert 'Reading the portfolio' in tool_lines
+    assert parts[-1] == {'kind': 'text', 'text': exchanges[0]['assistant_text']}
 
 
 async def test_status_events_surface_tool_calls_and_retire(pool):
@@ -92,10 +98,9 @@ async def test_multiturn_history_grows(pool):
     assert len(history) >= 4
 
 
-async def test_short_commentary_flushes_as_a_thought():
-    """Text still inside the holdback when a tool call arrives was
-    commentary: it goes out as one thought and never flashes as answer.
-    Text left buffered at stream end is answer."""
+async def test_text_streams_as_deltas_in_stream_order():
+    """All text - commentary before tool calls and answer alike - streams
+    as deltas: text belongs to the chat and stays there."""
 
     async def commentary_round():
         yield PartStartEvent(index=0, part=TextPart(content='Let me '))
@@ -103,38 +108,15 @@ async def test_short_commentary_flushes_as_a_thought():
         yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
 
     events = [e async for e in ChatService._answer_deltas(commentary_round())]
-    assert events == [{'type': 'thought', 'text': 'Let me search.'}]
-
-    async def final_round():
-        yield PartStartEvent(index=0, part=ToolCallPart(tool_name='get_portfolio'))
-        yield PartStartEvent(index=1, part=TextPart(content='Answer.'))
-
-    events = [e async for e in ChatService._answer_deltas(final_round())]
-    assert events == [{'type': 'delta', 'text': 'Answer.'}]
-
-
-async def test_long_commentary_streams_then_demotes():
-    """Text that overflows the holdback streams as answer deltas; the tool
-    call that follows sends the demote fallback."""
-    opening = 'x' * TEXT_HOLDBACK
-
-    async def commentary_round():
-        yield PartStartEvent(index=0, part=TextPart(content=opening))
-        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=' more'))
-        yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
-
-    events = [e async for e in ChatService._answer_deltas(commentary_round())]
     assert events == [
-        {'type': 'delta', 'text': opening},
-        {'type': 'delta', 'text': ' more'},
-        {'type': 'demote'},
+        {'type': 'delta', 'text': 'Let me '},
+        {'type': 'delta', 'text': 'search.'},
     ]
 
 
 async def test_thinking_streams_as_thought_events():
-    """A reasoning model's thinking parts stream as thought events - they
-    are commentary by construction, so no demote is involved - and they do
-    not count as answer text a tool call would need to demote."""
+    """Thinking parts stream as thought events for the bubbles; text in the
+    same round streams as deltas for the chat."""
 
     async def reasoning_round():
         yield PartStartEvent(index=0, part=ThinkingPart(content='The user wants '))
@@ -146,7 +128,7 @@ async def test_thinking_streams_as_thought_events():
     assert events == [
         {'type': 'thought', 'text': 'The user wants '},
         {'type': 'thought', 'text': 'a comparison.'},
-        {'type': 'thought', 'text': '\nRunning searches.'},  # flushed commentary, separated
+        {'type': 'delta', 'text': 'Running searches.'},
     ]
 
 

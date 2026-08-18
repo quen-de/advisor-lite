@@ -12,10 +12,32 @@ export interface ChatRow {
   created_at: string;
 }
 
+export interface ToolLine {
+  id?: string;
+  text: string;
+  done: boolean;
+}
+
+/** One reasoning sequence: the model's thinking plus the tool calls it made. */
+export interface Bubble {
+  kind: 'bubble';
+  thoughts: string;
+  tools: ToolLine[];
+}
+
+export interface TextSegment {
+  kind: 'text';
+  text: string;
+}
+
+/** An assistant message in display order: bubbles and text segments. */
+export type MessagePart = Bubble | TextSegment;
+
 export interface ExchangeRow {
   user_text: string;
   assistant_text: string;
   sources: Source[];
+  parts: MessagePart[];
 }
 
 export interface Position {
