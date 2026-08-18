@@ -37,9 +37,9 @@ The repo is seeded from the chat's persisted citation state (every source regist
 |---|---|---|
 | `status` | `{"id": str, "text": str}` | a tool call started; parallel calls each announce with their own id. The client stacks the line into the current thinking bubble (not persisted) |
 | `status_done` | `{"id": str}` | that tool call finished; the client marks its line with a check |
-| `thought` | `{"text": str}` | next chunk of the model's thinking stream; the client streams it into the current bubble (not persisted) |
-| `delta` | `{"text": str}` | next chunk of streamed text, optimistically treated as the answer |
-| `demote` | `{}` | the text streamed since the last demote was commentary, not the answer: a tool call followed it in the same response. The client moves it into a thinking bubble; the final round never demotes |
+| `thought` | `{"text": str}` | next chunk of the model's thinking stream, or pre-tool commentary text confirmed while still inside the holdback buffer; the client streams it into the current bubble (not persisted) |
+| `delta` | `{"text": str}` | next chunk of the answer. Text is buffered up to `TEXT_HOLDBACK` characters first, so short commentary before a tool round flushes as a `thought` instead of flashing as answer |
+| `demote` | `{}` | fallback for commentary that overflowed the holdback: a tool call followed the streamed text in the same response, so the client folds it into the current bubble; the final round never demotes |
 | `title` | `{"chat_id": str, "title": str}` | first message's title; the titling task starts with the run, so this arrives as soon as it resolves - between other events or after `done`. The task survives disconnects |
 | `sources` | `{"sources": [{id, title, url}], "text": str}` | referenced sources plus the processed answer text |
 | `done` | `{"chat_id": str}` | exchange persisted |

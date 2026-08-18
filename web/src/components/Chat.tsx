@@ -35,6 +35,7 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
   const [streaming, setStreaming] = useState(false);
   const [idle, setIdle] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
   const lastDeltaAt = useRef(0);
   const toolShownAt = useRef(new Map<string, number>());
   const thinkingShownAt = useRef(0);
@@ -82,11 +83,14 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
   }, [streaming]);
 
   useEffect(() => {
+    pinned.current = true;
     setMessages(fromExchanges(exchanges));
   }, [chatId, exchanges]);
 
+  // Follow the stream only while the reader is at (or near) the bottom;
+  // scrolling up detaches, scrolling back near the bottom reattaches.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (pinned.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
   async function submit() {
@@ -94,6 +98,7 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
     if (!content || streaming) return;
     setInput('');
     setStreaming(true);
+    pinned.current = true; // sending always snaps back to the live end
     lastDeltaAt.current = Date.now();
     setMessages((current) => [
       ...current,
@@ -181,7 +186,14 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
 
   return (
     <div className="chat">
-      <div className="chat-scroll" ref={scrollRef}>
+      <div
+        className="chat-scroll"
+        ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current;
+          if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        }}
+      >
         {messages.length === 0 && (
           <p className="chat-empty">
             Ask about the portfolio. Try: should I trim my NVDA position?

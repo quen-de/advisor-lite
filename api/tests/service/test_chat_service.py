@@ -17,7 +17,7 @@ from pydantic_ai.models.test import TestModel
 from advisor.agents.capabilities.core import Position, Source
 from advisor.config import Settings
 from advisor.service import chats, portfolio_store
-from advisor.service.chat_service import ChatService
+from advisor.service.chat_service import TEXT_HOLDBACK, ChatService
 
 SEED = Path(__file__).parents[2] / 'etc' / 'portfolio.yaml'
 
@@ -92,9 +92,10 @@ async def test_multiturn_history_grows(pool):
     assert len(history) >= 4
 
 
-async def test_text_followed_by_tool_calls_is_demoted():
-    """Commentary before a tool round streams as deltas, then a demote event
-    reclassifies it once the tool call appears; answer-only rounds never demote."""
+async def test_short_commentary_flushes_as_a_thought():
+    """Text still inside the holdback when a tool call arrives was
+    commentary: it goes out as one thought and never flashes as answer.
+    Text left buffered at stream end is answer."""
 
     async def commentary_round():
         yield PartStartEvent(index=0, part=TextPart(content='Let me '))
@@ -102,11 +103,7 @@ async def test_text_followed_by_tool_calls_is_demoted():
         yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
 
     events = [e async for e in ChatService._answer_deltas(commentary_round())]
-    assert events == [
-        {'type': 'delta', 'text': 'Let me '},
-        {'type': 'delta', 'text': 'search.'},
-        {'type': 'demote'},
-    ]
+    assert events == [{'type': 'thought', 'text': 'Let me search.'}]
 
     async def final_round():
         yield PartStartEvent(index=0, part=ToolCallPart(tool_name='get_portfolio'))
@@ -114,6 +111,24 @@ async def test_text_followed_by_tool_calls_is_demoted():
 
     events = [e async for e in ChatService._answer_deltas(final_round())]
     assert events == [{'type': 'delta', 'text': 'Answer.'}]
+
+
+async def test_long_commentary_streams_then_demotes():
+    """Text that overflows the holdback streams as answer deltas; the tool
+    call that follows sends the demote fallback."""
+    opening = 'x' * TEXT_HOLDBACK
+
+    async def commentary_round():
+        yield PartStartEvent(index=0, part=TextPart(content=opening))
+        yield PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=' more'))
+        yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
+
+    events = [e async for e in ChatService._answer_deltas(commentary_round())]
+    assert events == [
+        {'type': 'delta', 'text': opening},
+        {'type': 'delta', 'text': ' more'},
+        {'type': 'demote'},
+    ]
 
 
 async def test_thinking_streams_as_thought_events():
@@ -124,12 +139,14 @@ async def test_thinking_streams_as_thought_events():
     async def reasoning_round():
         yield PartStartEvent(index=0, part=ThinkingPart(content='The user wants '))
         yield PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta='a comparison.'))
-        yield PartStartEvent(index=1, part=ToolCallPart(tool_name='web_search'))
+        yield PartStartEvent(index=1, part=TextPart(content='Running searches.'))
+        yield PartStartEvent(index=2, part=ToolCallPart(tool_name='web_search'))
 
     events = [e async for e in ChatService._answer_deltas(reasoning_round())]
     assert events == [
         {'type': 'thought', 'text': 'The user wants '},
         {'type': 'thought', 'text': 'a comparison.'},
+        {'type': 'thought', 'text': '\nRunning searches.'},  # flushed commentary, separated
     ]
 
 
