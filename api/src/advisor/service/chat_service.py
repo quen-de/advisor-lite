@@ -8,6 +8,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import (
     FinalResultEvent,
     FunctionToolCallEvent,
+    FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
     PartDeltaEvent,
     PartStartEvent,
@@ -120,10 +121,19 @@ class ChatService:
                     async for event in self._answer_deltas(request_stream):
                         yield event
             elif Agent.is_call_tools_node(node):
+                # Parallel tool calls all announce up front, then execute
+                # concurrently; the ids let the client keep one line per call
+                # and retire each as its result lands.
                 async with node.stream(run.ctx) as tool_stream:
                     async for event in tool_stream:
                         if isinstance(event, FunctionToolCallEvent):
-                            yield {'type': 'status', 'text': status_text(event.part)}
+                            yield {
+                                'type': 'status',
+                                'id': event.part.tool_call_id,
+                                'text': status_text(event.part),
+                            }
+                        elif isinstance(event, FunctionToolResultEvent):
+                            yield {'type': 'status_done', 'id': event.part.tool_call_id}
 
     def _spawn(self, coro: Coroutine[None, None, str | None]) -> asyncio.Task[str | None]:
         """Run coro as a task the service keeps alive past a client disconnect."""

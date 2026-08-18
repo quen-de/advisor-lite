@@ -34,7 +34,8 @@ The repo is seeded from the chat's persisted citation state (every source regist
 
 | event | data | meaning |
 |---|---|---|
-| `status` | `{"text": str}` | a tool is running (progress line, not persisted) |
+| `status` | `{"id": str, "text": str}` | a tool call started; parallel calls each announce with their own id (progress lines, not persisted) |
+| `status_done` | `{"id": str}` | that tool call finished; the client retires its line |
 | `delta` | `{"text": str}` | next chunk of the answer |
 | `title` | `{"chat_id": str, "title": str}` | first message's title; the titling task starts with the run, so this arrives as soon as it resolves - between other events or after `done`. The task survives disconnects |
 | `sources` | `{"sources": [{id, title, url}], "text": str}` | referenced sources plus the processed answer text |

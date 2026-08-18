@@ -19,6 +19,9 @@ await page.waitForSelector('.holdings');
 await page.waitForTimeout(1500);
 
 await page.locator('.new-chat').click();
+// Pin the recording's own chat id now: deleting "the newest chat" at the end
+// would race anything else creating chats meanwhile.
+const chatId = (await (await fetch(`${BASE}/api/chats`)).json())[0].id;
 const input = page.locator('.chat-input input');
 await input.pressSequentially(PROMPT, { delay: 35 });
 await page.waitForTimeout(400);
@@ -33,7 +36,6 @@ await context.close();
 console.log(await video.path());
 
 if (!process.env.KEEP_CHAT) {
-  const chats = await (await fetch(`${BASE}/api/chats`)).json();
-  await fetch(`${BASE}/api/chats/${chats[0].id}`, { method: 'DELETE' });
+  await fetch(`${BASE}/api/chats/${chatId}`, { method: 'DELETE' });
 }
 await browser.close();

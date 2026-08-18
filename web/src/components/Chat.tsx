@@ -26,8 +26,23 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => fromExchanges(exchanges));
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<{ id: string; text: string }[]>([]);
+  const [idle, setIdle] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastDeltaAt = useRef(0);
+
+  // With a reasoning model the stream goes quiet between tool rounds while
+  // it thinks; surface that instead of an empty gap.
+  useEffect(() => {
+    if (!streaming) {
+      setIdle(false);
+      return;
+    }
+    const timer = setInterval(() => {
+      setIdle(Date.now() - lastDeltaAt.current > 1500);
+    }, 400);
+    return () => clearInterval(timer);
+  }, [streaming]);
 
   useEffect(() => {
     setMessages(fromExchanges(exchanges));
@@ -35,13 +50,14 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, status]);
+  }, [messages, statuses]);
 
   async function submit() {
     const content = input.trim();
     if (!content || streaming) return;
     setInput('');
     setStreaming(true);
+    lastDeltaAt.current = Date.now();
     setMessages((current) => [
       ...current,
       { role: 'user', text: content, sources: [] },
@@ -53,21 +69,25 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
       await sendMessage(chatId, content, (event, data) => {
         if (event === 'delta') {
           const { text } = data as { text: string };
-          setStatus(null);
+          lastDeltaAt.current = Date.now();
+          setStatuses([]);
           patchLast((message) => ({ ...message, text: message.text + text }));
         } else if (event === 'status') {
-          const { text } = data as { text: string };
-          setStatus(text);
+          const { id, text } = data as { id: string; text: string };
+          setStatuses((current) => [...current.filter((s) => s.id !== id), { id, text }]);
+        } else if (event === 'status_done') {
+          const { id } = data as { id: string };
+          setStatuses((current) => current.filter((s) => s.id !== id));
         } else if (event === 'title') {
           const { title } = data as { title: string };
           onTitle?.(chatId, title);
         } else if (event === 'sources') {
           const { sources, text } = data as { sources: Source[]; text?: string };
-          setStatus(null);
+          setStatuses([]);
           patchLast((message) => ({ ...message, sources, text: text ?? message.text }));
         } else if (event === 'error') {
           const { message } = data as { message: string };
-          setStatus(null);
+          setStatuses([]);
           patchLast(() => ({ role: 'system', text: message, sources: [] }));
         }
       });
@@ -79,7 +99,7 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
       }));
     } finally {
       setStreaming(false);
-      setStatus(null);
+      setStatuses([]);
     }
   }
 
@@ -100,7 +120,12 @@ export function Chat({ chatId, exchanges, onTitle }: ChatProps) {
             streaming={streaming && index === messages.length - 1 && message.role === 'assistant'}
           />
         ))}
-        {status && <p className="status-line">{status}</p>}
+        {statuses.map((s) => (
+          <p className="status-line" key={s.id}>
+            {s.text}
+          </p>
+        ))}
+        {streaming && statuses.length === 0 && idle && <p className="status-line">Thinking…</p>}
       </div>
       <form
         className="chat-input"

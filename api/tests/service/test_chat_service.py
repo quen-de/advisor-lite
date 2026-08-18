@@ -35,12 +35,15 @@ async def test_stream_shape_and_persistence(pool):
     assert exchanges[0]['user_text'] == 'What do I hold?'
 
 
-async def test_status_events_surface_tool_calls(pool):
+async def test_status_events_surface_tool_calls_and_retire(pool):
     service = make_service(pool)
     chat = await chats.create_chat(pool)
     events = await collect(service, chat['id'], 'What do I hold?')
-    statuses = [e['text'] for e in events if e['type'] == 'status']
-    assert 'Reading the portfolio' in statuses  # TestModel calls every tool
+    statuses = [e for e in events if e['type'] == 'status']
+    assert 'Reading the portfolio' in [e['text'] for e in statuses]  # TestModel calls every tool
+    done_ids = [e['id'] for e in events if e['type'] == 'status_done']
+    for status in statuses:  # every announced call reports completion
+        assert status['id'] in done_ids
     sources_event = next(e for e in events if e['type'] == 'sources')
     assert sources_event['text']
 
