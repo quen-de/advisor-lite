@@ -27,9 +27,19 @@ await input.pressSequentially(PROMPT, { delay: 35 });
 await page.waitForTimeout(400);
 await page.locator('.chat-input button').click();
 
-// The sources list renders right before `done`; hold the final frame after it.
+// The sources list renders right before `done`; the stream leaves the view
+// pinned to it, so sweep back over the answer for the gif's closing pass.
 await page.locator('.sources').waitFor({ timeout: 240_000 });
-await page.waitForTimeout(3000);
+await page.waitForTimeout(1500);
+const answer = page.locator('.message-assistant').last().locator('.message-body').last();
+await answer.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+await page.waitForTimeout(2500);
+await page.mouse.move(820, 400);
+for (let step = 0; step < 6; step++) {
+  await page.mouse.wheel(0, 260);
+  await page.waitForTimeout(1400);
+}
+await page.waitForTimeout(3500);
 
 const video = page.video();
 await context.close();
