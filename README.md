@@ -19,7 +19,11 @@ cp .env.example .env   # set MODEL, its provider key, and EXA_API_KEY
 docker compose up --build
 ```
 
-Open http://localhost:8080. No keys handy? `MODEL=test` runs a fake model, the same one CI uses.
+Open http://localhost:8080, voila.
+
+To enable web searches, you can get an API key in seconds at [Exa.ai](https://exa.ai).
+The backend is compatible with most common LLM providers and OLlama.
+No keys handy? `MODEL=test` runs a fake model, the same one CI uses.
 
 ## What this demo bundles
 
