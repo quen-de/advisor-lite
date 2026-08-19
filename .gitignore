@@ -10,3 +10,4 @@ playwright-report/
 test-results/
 web/src/client/generated/
 openapi.json
+.DS_Store

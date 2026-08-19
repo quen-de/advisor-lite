@@ -26,7 +26,7 @@ Open http://localhost:8080. No keys handy? `MODEL=test` runs a fake model, the s
 - **Agent-as-config**: the agent is a YAML spec ([`advisor.yaml`](api/src/advisor/agents/advisor.yaml)), capabilities are plug-and-play.
 - **A citation pipeline**: search results register sources under friendly ids, the model cites with `[n]` markers, and an output processor strips orphan markers and returns only the sources actually referenced.
 - **Multiturn persistence**: model message history is stored per conversation in Postgres and replayed on the next turn.
-- **Provider-agnostic model choice**: one `MODEL` env var holding a pydantic-ai `provider:model` string. Missing provider keys fail fast with the exact variable name.
+- **Provider-agnostic model choice**: one `MODEL` env var holding a [pydantic-ai](https://pydantic.dev/pydantic-ai) `provider:model` string. Missing provider keys fail fast with the exact variable name.
 - **Keyless CI**: `MODEL=test` wires pydantic-ai's `TestModel` through the whole app, so lint, types, unit tests, and a full-stack compose smoke test run without secrets.
 - **CI-run agent evals**: a [pydantic-evals](https://ai.pydantic.dev/evals/) dataset scores citation discipline, portfolio grounding, and refusal of out-of-scope requests against a real model.
 - **Containers**: three services with healthcheck-chained startup, non-root multi-stage images, and `docker compose watch` for development.
@@ -74,4 +74,8 @@ MODEL=anthropic:claude-sonnet-4-6 uv run python -m evals.run
 
 Regenerate the typed API client: `uv run python scripts/export_openapi.py` (from `api/`) then `npm run generate-client` (from `web/`).
 
+## Observability
+You can optionally bring your [Logfire](https://pydantic.dev/logfire) API key (`LOGFIRE_API_KEY`) to instrument the advisor agent with minimal effort:
+![logfire-dashboard](./docs/logfire.png)
+## Licence
 MIT licensed.
