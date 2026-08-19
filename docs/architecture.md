@@ -44,7 +44,7 @@ The repo is seeded from the chat's persisted citation state (every source regist
 | `done` | `{"chat_id": str}` | exchange persisted |
 | `error` | `{"message": str}` | run failed, nothing persisted |
 
-The frontend, the compose smoke test, and the service tests all assert this table.
+The frontend, the compose smoke test, and the service tests all assert this table. I am yet to find a stream/communication protocol I like (AG-UI and Vercel AI even though technically "open" are both tainted by their commercial motivation, making you fight against them when you dig deep enough), so for now keeping it good ol' SSE.
 
 ## The MODEL=test seam
 
